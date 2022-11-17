@@ -110,3 +110,8 @@ venv.bak/
 
 # mypy
 .mypy_cache/
+
+
+models/
+data/MOT16
+*.webm

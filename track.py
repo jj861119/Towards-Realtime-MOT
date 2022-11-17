@@ -196,14 +196,14 @@ if __name__ == '__main__':
                     '''
         data_root = '/home/wangzd/datasets/MOT/MOT17/images/train'
     else:
-        seqs_str = '''MOT16-01
-                     MOT16-03
-                     MOT16-06
-                     MOT16-07
-                     MOT16-08
-                     MOT16-12
-                     MOT16-14'''
-        data_root = '/home/wangzd/datasets/MOT/MOT16/images/test'
+        seqs_str = '''MOT16-01 '''
+                    #  MOT16-03
+                    #  MOT16-06
+                    #  MOT16-07
+                    #  MOT16-08
+                    #  MOT16-12
+                    #  MOT16-14
+        data_root = 'D:/Github/Towards-Realtime-MOT/data/MOT16/MOT16/test'
     seqs = [seq.strip() for seq in seqs_str.split()]
 
     main(opt,

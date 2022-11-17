@@ -1,0 +1,8 @@
+python demo.py --input-video data/video.webm --weights models/jde.1088x608.uncertainty.pt
+
+python track.py --cfg ./cfg/yolov3_1088x608.cfg --weights models/jde.1088x608.uncertainty.pt --test-mot16 --save-videos
+
+
+
+
+pip install -e git+https://github.com/samson-wang/cython_bbox.git#egg=cython-bbox
