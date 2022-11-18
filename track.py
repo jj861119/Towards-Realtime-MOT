@@ -38,7 +38,7 @@ def write_results(filename, results, data_type):
     logger.info('save results to {}'.format(filename))
 
 
-def eval_seq(opt, dataloader, data_type, result_filename, save_dir=None, show_image=True, frame_rate=30):
+def eval_seq(opt, img, img0, tracker, timer, save_dir=None, show_image=True, frame_id=0):
     '''
        Processes the video sequence given and provides the output of tracking result (write the results in video file)
 
@@ -76,97 +76,98 @@ def eval_seq(opt, dataloader, data_type, result_filename, save_dir=None, show_im
 
     if save_dir:
         mkdir_if_missing(save_dir)
-    tracker = JDETracker(opt, frame_rate=frame_rate)
-    timer = Timer()
-    results = []
-    frame_id = 0
-    for path, img, img0 in dataloader:
-        if frame_id % 20 == 0:
-            logger.info('Processing frame {} ({:.2f} fps)'.format(frame_id, 1./max(1e-5, timer.average_time)))
+    #tracker = JDETracker(opt, frame_rate=frame_rate)
+    # results = []
+    # frame_id = 0
+    #for path, img, img0 in dataloader:
+    if frame_id % 20 == 0:
+        logger.info('Processing frame {} ({:.2f} fps)'.format(frame_id, 1./max(1e-5, timer.average_time)))
 
-        # run tracking
-        timer.tic()
-        blob = torch.from_numpy(img).cuda().unsqueeze(0)
-        online_targets = tracker.update(blob, img0)
-        online_tlwhs = []
-        online_ids = []
-        for t in online_targets:
-            tlwh = t.tlwh
-            tid = t.track_id
-            vertical = tlwh[2] / tlwh[3] > 1.6
-            if tlwh[2] * tlwh[3] > opt.min_box_area and not vertical:
-                online_tlwhs.append(tlwh)
-                online_ids.append(tid)
-        timer.toc()
-        # save results
-        results.append((frame_id + 1, online_tlwhs, online_ids))
-        if show_image or save_dir is not None:
-            online_im = vis.plot_tracking(img0, online_tlwhs, online_ids, frame_id=frame_id,
-                                          fps=1. / timer.average_time)
-        if show_image:
-            cv2.imshow('online_im', online_im)
-        if save_dir is not None:
-            cv2.imwrite(os.path.join(save_dir, '{:05d}.jpg'.format(frame_id)), online_im)
-        frame_id += 1
+    # run tracking
+    timer.tic()
+    blob = torch.from_numpy(img).cuda().unsqueeze(0)
+    online_targets = tracker.update(blob, img0)
+    online_tlwhs = []
+    online_ids = []
+    #print(online_targets)
+    for t in online_targets:
+        tlwh = t.tlwh
+        tid = t.track_id
+        vertical = tlwh[2] / tlwh[3] > 1.6
+        if tlwh[2] * tlwh[3] > opt.min_box_area and not vertical:
+            online_tlwhs.append(tlwh)
+            online_ids.append(tid)
+    timer.toc()
     # save results
-    write_results(result_filename, results, data_type)
-    return frame_id, timer.average_time, timer.calls
+    # results.append((frame_id + 1, online_tlwhs, online_ids))
+    if show_image or save_dir is not None:
+        online_im = vis.plot_tracking(img0, online_tlwhs, online_ids, frame_id=frame_id,
+                                        fps=1. / timer.average_time)
+    if show_image:
+        cv2.imshow('online_im', online_im)
+    if save_dir is not None:
+        cv2.imwrite(os.path.join(save_dir, '{:05d}.jpg'.format(frame_id)), online_im)
+
+    # save results
+    #write_results(result_filename, results, data_type)
+    # return frame_id, timer.average_time, timer.calls
 
 
-def main(opt, data_root='/data/MOT16/train', det_root=None, seqs=('MOT16-05',), exp_name='demo', 
+def main(opt, rtsp_ip, data_root='./results/RTSP', exp_name='demo', 
          save_images=False, save_videos=False, show_image=True):
     logger.setLevel(logging.INFO)
-    result_root = os.path.join(data_root, '..', 'results', exp_name)
-    mkdir_if_missing(result_root)
-    data_type = 'mot'
+    # result_root = os.path.join(data_root, 'results', exp_name)
+    # mkdir_if_missing(result_root)
+    # data_type = 'mot'
 
     # Read config
     cfg_dict = parse_model_cfg(opt.cfg)
     opt.img_size = [int(cfg_dict[0]['width']), int(cfg_dict[0]['height'])]
+    output_dir = os.path.join(data_root,'outputs', exp_name) if save_images or save_videos else None
 
     # run tracking
-    accs = []
     n_frame = 0
-    timer_avgs, timer_calls = [], []
-    for seq in seqs:
-        output_dir = os.path.join(data_root, '..','outputs', exp_name, seq) if save_images or save_videos else None
+    cam = cv2.VideoCapture(rtsp_ip)
+    #cam = cv2.VideoCapture('./data/lab2.mp4')
+    # frame_width = cam.get(cv2.CAP_PROP_FRAME_WIDTH)  # cam.get(3)
+    # frame_height = cam.get(cv2.CAP_PROP_FRAME_HEIGHT)  # cam.get(4)
+    
+    timer = Timer()
+    tracker = JDETracker(opt, frame_rate=30)
+    #cv2.namedWindow('cam',cv2.WINDOW_NORMAL)
+    cv2.namedWindow('online_im',cv2.WINDOW_NORMAL)
+    while cam.isOpened():
+        ret , frame = cam.read()
+        if not ret:
+            break
+        vis = frame.copy()
+        #cv2.imshow('cam', vis)
+        key = cv2.waitKey(5)
+        if 0xFF & key == 27:  # Esc
+            break
 
-        logger.info('start seq: {}'.format(seq))
-        dataloader = datasets.LoadImages(osp.join(data_root, seq, 'img1'), opt.img_size)
-        result_filename = os.path.join(result_root, '{}.txt'.format(seq))
-        meta_info = open(os.path.join(data_root, seq, 'seqinfo.ini')).read() 
-        frame_rate = int(meta_info[meta_info.find('frameRate')+10:meta_info.find('\nseqLength')])
-        nf, ta, tc = eval_seq(opt, dataloader, data_type, result_filename,
-                              save_dir=output_dir, show_image=show_image, frame_rate=frame_rate)
-        n_frame += nf
-        timer_avgs.append(ta)
-        timer_calls.append(tc)
+        # logger.info('start seq: {}'.format(seq))
+        
+        img, img0 = datasets.preprocess(vis)
+        # dataloader = datasets.LoadImages(osp.join(data_root, seq, 'img1'), opt.img_size)
+        # result_filename = os.path.join(result_root, '{}.txt'.format(n_frame))
+        
+        eval_seq(opt, img, img0, tracker, timer, save_dir=output_dir, show_image=show_image, frame_id=n_frame)
+        n_frame+=1
+        # timer_avgs.append(ta)
+        # timer_calls.append(tc)
 
-        # eval
-        logger.info('Evaluate seq: {}'.format(seq))
-        evaluator = Evaluator(data_root, seq, data_type)
-        accs.append(evaluator.eval_file(result_filename))
-        if save_videos:
-            output_video_path = osp.join(output_dir, '{}.mp4'.format(seq))
-            cmd_str = 'ffmpeg -f image2 -i {}/%05d.jpg -c:v copy {}'.format(output_dir, output_video_path)
-            os.system(cmd_str)
-    timer_avgs = np.asarray(timer_avgs)
-    timer_calls = np.asarray(timer_calls)
-    all_time = np.dot(timer_avgs, timer_calls)
-    avg_time = all_time / np.sum(timer_calls)
-    logger.info('Time elapsed: {:.2f} seconds, FPS: {:.2f}'.format(all_time, 1.0 / avg_time))
-
-    # get summary
-    metrics = mm.metrics.motchallenge_metrics
-    mh = mm.metrics.create()
-    summary = Evaluator.get_summary(accs, seqs, metrics)
-    strsummary = mm.io.render_summary(
-        summary,
-        formatters=mh.formatters,
-        namemap=mm.io.motchallenge_metric_names
-    )
-    print(strsummary)
-    Evaluator.save_summary(summary, os.path.join(result_root, 'summary_{}.xlsx'.format(exp_name)))
+    if save_videos:
+        output_video_path = osp.join(output_dir, '../rtsp.avi')
+        cmd_str = 'ffmpeg -framerate 15 -y -f image2 -i {}/%05d.jpg -c:v copy {}'.format(output_dir, output_video_path)
+        os.system(cmd_str)
+    
+    cam.release()
+    # timer_avgs = np.asarray(timer_avgs)
+    # timer_calls = np.asarray(timer_calls)
+    # all_time = np.dot(timer_avgs, timer_calls)
+    # avg_time = all_time / np.sum(timer_calls)
+    # logger.info('Time elapsed: {:.2f} seconds, FPS: {:.2f}'.format(all_time, 1.0 / avg_time))
 
 
 
@@ -185,32 +186,35 @@ if __name__ == '__main__':
     opt = parser.parse_args()
     print(opt, end='\n\n')
  
-    if not opt.test_mot16:
-        seqs_str = '''MOT17-02-SDP
-                      MOT17-04-SDP
-                      MOT17-05-SDP
-                      MOT17-09-SDP
-                      MOT17-10-SDP
-                      MOT17-11-SDP
-                      MOT17-13-SDP
-                    '''
-        data_root = '/home/wangzd/datasets/MOT/MOT17/images/train'
-    else:
-        seqs_str = '''MOT16-01
-                     MOT16-03
-                     MOT16-06
-                     MOT16-07
-                     MOT16-08
-                     MOT16-12
-                     MOT16-14'''
-        data_root = '/home/wangzd/datasets/MOT/MOT16/images/test'
-    seqs = [seq.strip() for seq in seqs_str.split()]
+    # if not opt.test_mot16:
+    #     seqs_str = '''MOT17-02-SDP
+    #                   MOT17-04-SDP
+    #                   MOT17-05-SDP
+    #                   MOT17-09-SDP
+    #                   MOT17-10-SDP
+    #                   MOT17-11-SDP
+    #                   MOT17-13-SDP
+    #                 '''
+    #     data_root = '/home/wangzd/datasets/MOT/MOT17/images/train'
+    # else:
+    #     seqs_str = '''MOT16-01
+    #                  MOT16-03
+    #                  MOT16-06
+    #                  MOT16-07
+    #                  MOT16-08
+    #                  MOT16-12
+    #                  MOT16-14'''
+    #     data_root = '/home/wangzd/datasets/MOT/MOT16/images/test'
+    # seqs = [seq.strip() for seq in seqs_str.split()]
+    rtsp_ip = 'rtsp://root:a1s2d3f4@210.61.163.32:8889/live.sdp'
 
     main(opt,
-         data_root=data_root,
-         seqs=seqs,
-         exp_name=opt.weights.split('/')[-2],
-         show_image=False,
+        #  data_root=data_root,
+        #  seqs=seqs,
+         rtsp_ip = rtsp_ip,
+        #  exp_name=opt.weights.split('/')[-2],
+         exp_name='rtsp',
+         show_image=True,
          save_images=opt.save_images, 
          save_videos=opt.save_videos)
 

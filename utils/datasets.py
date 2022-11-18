@@ -235,6 +235,17 @@ class LoadImagesAndLabels:  # for training
     def __len__(self):
         return self.nF  # number of batches
 
+def preprocess(img0,target_width=1088,target_height=608):
+        # Padded resize
+        img, _, _, _ = letterbox(img0, height=target_height, width=target_width)
+        # cv2.imshow('preprocessed', img)
+
+        # Normalize RGB
+        img = img[:, :, ::-1].transpose(2, 0, 1)
+        img = np.ascontiguousarray(img, dtype=np.float32)
+        img /= 255.0
+
+        return img, img0
 
 def letterbox(img, height=608, width=1088, color=(127.5, 127.5, 127.5)):  # resize a rectangular image to a padded rectangular 
     shape = img.shape[:2]  # shape = [height, width]
