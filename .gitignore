@@ -115,3 +115,5 @@ venv.bak/
 models/
 data/MOT16
 *.webm
+src/
+*.mp4
